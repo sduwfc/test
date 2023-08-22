@@ -1,0 +1,11 @@
+opencv-python
+numpy
+pycocotools
+scikit-learn
+torch<=1.13+cpu
+torchvision<=0.14+cpu
+tqdm
+six
+transformers<=4.23.0
+paddlepaddle
+paddlenlp

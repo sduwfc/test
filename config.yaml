@@ -1,0 +1,43 @@
+---
+
+iter_opt: --calculate_times
+
+# LMDB output
+data_dir: $(root)/data
+
+# Cali dataset path for MLIR
+imagenet2012_mlir_cali_set: $(root)/dataset/ILSVRC2012/caliset
+coco2017_mlir_cali_set: $(root)/dataset/COCO2017/caliset
+cifar100_mlir_cali_set: $(root)/dataset/CIFAR100/caliset
+
+imagenet2012_cali_set: $(root)/dataset/ILSVRC2012/caliset
+imagenet2012_val_set: $(root)/dataset/ILSVRC2012/ILSVRC2012_img_val
+imagenet2012_caffe_val_ground_truth: $(root)/dataset/ILSVRC2012/caffe_val.txt
+
+coco2017_cali_set: $(root)/dataset/COCO2017/caliset
+coco2017_val_set: $(root)/dataset/COCO2017/val2017
+coco2017_anno: $(root)/dataset/COCO2017/annotations
+
+cifar100_cali_lmdb: $(root)/dataset/CIFAR100/cifar100_quant_lmdb
+cifar100_val_set: $(root)/dataset/CIFAR100
+
+default_cases:
+  - vision/classification/LeNet
+  - vision/classification/inception_v4
+  - vision/classification/ResNet50-Caffe
+  - vision/detection/yolov5
+
+
+lfw_val_set: $(root)/dataset/lfw/lfw_mtcnnpy_160.tar
+lfw_cali_set: $(root)/dataset/lfw/caliset/
+lfw_pairs: $(root)/dataset/lfw/pairs.txt
+
+squadv1_cali_set: $(root)/dataset/SQuAD/caliset
+squadv1_val_set: $(root)/dataset/SQuAD/val
+
+CAIL2019_divorce_cali_set: $(root)/dataset/CAIL2019/divorce/caliset
+CAIL2019_divorce_val_set: $(root)/dataset/CAIL2019/divorce/dev.txt
+CAIL2019_divorce_label_set: $(root)/dataset/CAIL2019/divorce/label.txt
+
+SHA_Density_Map_cali_set: $(root)/dataset/density/SHA_Density_Map
+SHB_Density_Map_cali_set: $(root)/dataset/density/SHB_Density_Map

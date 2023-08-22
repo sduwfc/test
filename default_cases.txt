@@ -1,0 +1,3 @@
+vision/classification/LeNet
+vision/classification/MobileNet-Caffe-v2
+vision/classification/ResNet50-Caffe
