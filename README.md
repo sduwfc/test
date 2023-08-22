@@ -4,6 +4,7 @@ test[ashdiashdfjiosadfg.com/asbdfguyawegf.html]
 ## Usage - Compile and run
 test
 test
+test
 Install [tpu-perf](https://github.com/sophgo/tpu-perf) to build and run model cases.
 
 ```bash
