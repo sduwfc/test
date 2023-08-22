@@ -1,0 +1,33 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "https://ieeexplore.ieee.org"
+    },
+    {
+      "pattern": "https://www.aishelltech.com"
+    },
+    {
+      "pattern": "https://proceedings.neurips.cc"
+    },
+    {
+      "pattern": "https://www.crcv.ucf.edu/data/UCF101.php"
+    },
+    {
+      "pattern": "http://alov300pp.joomlafree.it/"
+    },
+    {
+      "pattern": "https://download.openmmlab.com/"
+    },
+    {
+      "pattern": "https://vision.eecs.yorku.ca/research/dynamic-scenes/"
+    },
+    {
+      "pattern": "https://github.com/sophgo/model-zoo/actions/workflows/"
+    }
+  ],
+  "timeout": "20s",
+  "retryOn429": true,
+  "retryCount": 5,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206]
+}

@@ -1,0 +1,318 @@
+---
+#################################
+#################################
+## Super Linter GitHub Actions ##
+#################################
+#################################
+name: MLIR And NNTC Test
+
+#
+# Documentation:
+# https://docs.github.com/en/actions/learn-github-actions/workflow-syntax-for-github-actions
+#
+#############################
+# Start the job on all push #
+#############################
+on:
+  push:
+  pull_request:
+    branches: [main, master, stable]
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    # UTC time 22:30
+    # Wednesday and Saturday
+    - cron: '30 22 * * 2,5'
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'Cases to run'
+        default: '--full'
+        required: false
+        type: string
+      toolchain:
+        description: 'Toolchain to run'
+        default: nntc
+        required: true
+        type: choice
+        options:
+          - mlir
+          - nntc
+      blame:
+        description: 'Trigger the blame regression test'
+        default: false
+        required: true
+        type: choice
+        options:
+          - true
+          - false
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || \
+    github.run_id }}"
+  cancel-in-progress: true
+
+###############
+# Set the Job #
+###############
+jobs:
+  markdown-lint:
+    # Name the Job
+    name: Lint
+    # Set the agent to run on
+    runs-on: ubuntu-latest
+
+    ##################
+    # Load all steps #
+    ##################
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      ################################
+      # Run Linter against code base #
+      ################################
+      - name: Lint Code Base
+        uses: github/super-linter@v4
+        env:
+          VALIDATE_ALL_CODEBASE: false
+          # Change to 'master' if your main branch differs
+          DEFAULT_BRANCH: main
+          VALIDATE_MARKDOWN: true
+          VALIDATE_YAML: true
+          YAML_ERROR_ON_WARNING: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          use-verbose-mode: 'yes'
+          config-file: '.github/workflows/link-check-conf.json'
+
+  content-vetting:
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - uses: actions/checkout@master
+      - run: python3 .github/workflows/check.py
+      - run: .github/workflows/lfs_validate.sh
+
+  mlir_test_build:
+    if: github.repository == 'sophgo/model-zoo' && 
+      (inputs.toolchain == 'mlir' || inputs.toolchain == '')
+    name: MLIR Build
+    runs-on: build
+    timeout-minutes: 10080
+    needs: [markdown-lint, markdown-link-check, content-vetting]
+    outputs:
+      MLIR_MODEL_TAR: ${{ steps.test.outputs.MLIR_MODEL_TAR }}
+
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          clean: false
+          lfs: false
+
+      - name: LFS Pull
+        run: git lfs pull --exclude '' --include '*'
+
+      - name: Set Optional Env
+        if: "${{ github.event_name == 'schedule' || \
+                   contains( \
+                     github.event.pull_request.labels.*.name, \
+                     'full_regression' \
+                   ) }}"
+        run: |
+          echo "FULL_TEST=true" >> $GITHUB_ENV
+
+      - name: Test
+        run: ".github/workflows/test.sh -m 'build and mlir' \
+                 ${{ inputs.cases }}"
+        id: test
+
+      - name: Post failed cases
+        if: ${{ failure() &&
+                (inputs.blame == 'true' || github.event_name == 'schedule') }}
+        run: |
+          test/post_failed_cases.sh --sdk \
+              ${{ steps.test.outputs.MLIR_MODEL_TAR }} \
+              --git_job_id ${{ github.run_id }}
+
+      - name: Cleanup
+        if: ${{ cancelled() || failure() }}
+        run: .github/workflows/cleanup.sh
+
+  mlir_test_runtime:
+    if: github.repository == 'sophgo/model-zoo' &&
+      (inputs.toolchain == 'mlir' || inputs.toolchain == '')
+    name: MLIR ${{ matrix.target }} ${{ matrix.host-arch }} Runtime
+    strategy:
+      matrix:
+        target: [BM1684, BM1684X]
+        host-arch: [X64, ARM64]
+    runs-on: [runtime, '${{ matrix.host-arch }}', '${{ matrix.target }}']
+    timeout-minutes: 10080
+    needs: mlir_test_build
+
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          clean: false
+          lfs: false
+
+      - name: LFS Pull
+        run: |
+          git lfs pull --exclude '' --include 'dataset/**'
+
+      - name: Set Optional Env
+        if: "${{ github.event_name == 'schedule' || \
+                 contains( \
+                   github.event.pull_request.labels.*.name, \
+                   'full_regression' \
+                 ) }}"
+        run: |
+          echo "FULL_TEST=true" >> $GITHUB_ENV
+
+      - name: Test
+        run: |
+          .github/workflows/test.sh -m 'runtime and mlir' -t \
+              ${{ matrix.target }} ${{ inputs.cases }}
+        env:
+          MLIR_MODEL_TAR: ${{ needs.mlir_test_build.outputs.MLIR_MODEL_TAR }}
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: csv-files
+          path: "csv_${{ matrix.target }}_${{ matrix.host-arch }}_\
+                    ${{ needs.mlir_test_build.outputs.MLIR_MODEL_TAR }}.gz"
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Cleanup
+        if: ${{ cancelled() || failure() }}
+        run:
+          .github/workflows/cleanup.sh
+
+  nntc_test_build:
+    if: github.repository == 'sophgo/model-zoo' &&
+      (inputs.toolchain == 'nntc' || inputs.toolchain == '')
+    name: NNTC Build
+    runs-on: build
+    timeout-minutes: 10080
+    needs: [markdown-lint, markdown-link-check, content-vetting]
+    outputs:
+      NNTC_MODEL_TAR: ${{ steps.test.outputs.NNTC_MODEL_TAR }}
+
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          clean: false
+          lfs: false
+
+      - name: LFS Pull
+        run: git lfs pull --exclude '' --include '*'
+
+      - name: Set Optional Env
+        if: "${{ github.event_name == 'schedule' || \
+                   contains( \
+                     github.event.pull_request.labels.*.name, \
+                     'full_regression' \
+                   ) }}"
+        run: |
+          echo "FULL_TEST=true" >> $GITHUB_ENV
+
+      - name: Test
+        run: ".github/workflows/test.sh -m 'build and nntc' \
+                  ${{ inputs.cases }}"
+        id: test
+
+      - name: Post failed cases
+        if: ${{ failure() &&
+          (inputs.blame == 'true' || github.event_name == 'schedule') }}
+        run: |
+          test/post_failed_cases.sh --sdk \
+              ${{ steps.test.outputs.NNTC_MODEL_TAR }}
+
+      - name: Cleanup
+        if: ${{ cancelled() || failure() }}
+        run: .github/workflows/cleanup.sh
+
+  nntc_test_runtime:
+    if: github.repository == 'sophgo/model-zoo' &&
+      (inputs.toolchain == 'nntc' || inputs.toolchain == '')
+    name: NNTC ${{ matrix.target }} ${{ matrix.host-arch }} Runtime
+    strategy:
+      matrix:
+        target: [BM1684, BM1684X]
+        host-arch: [X64, ARM64]
+    runs-on: [runtime, '${{ matrix.host-arch }}', '${{ matrix.target }}']
+    timeout-minutes: 10080
+    needs: nntc_test_build
+
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          clean: false
+          lfs: false
+
+      - name: LFS Pull
+        run: git lfs pull --exclude '' --include 'dataset/**'
+
+      - name: Set Optional Env
+        if: "${{ github.event_name == 'schedule' || \
+                 contains( \
+                   github.event.pull_request.labels.*.name, \
+                   'full_regression' \
+                 ) }}"
+        run: |
+          echo "FULL_TEST=true" >> $GITHUB_ENV
+
+      - name: Test
+        run: |
+          .github/workflows/test.sh -m 'runtime and nntc' -t \
+              ${{ matrix.target }} ${{ inputs.cases }}
+        env:
+          NNTC_MODEL_TAR: ${{ needs.nntc_test_build.outputs.NNTC_MODEL_TAR }}
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: csv-files
+          path: "csv_${{ matrix.target }}_${{ matrix.host-arch }}_\
+                    ${{ needs.nntc_test_build.outputs.NNTC_MODEL_TAR }}.gz"
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Cleanup
+        if: ${{ cancelled() || failure() }}
+        run:
+          .github/workflows/cleanup.sh

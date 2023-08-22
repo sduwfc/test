@@ -1,0 +1,24 @@
+---
+
+name: Release
+on: workflow_dispatch
+
+jobs:
+  release:
+    name: Pack And Release
+    runs-on: pack
+
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          clean: false
+          lfs: true
+      - run: git lfs pull --exclude '' --include '*'
+      - run: .github/workflows/pack.sh
+        env:
+          REMOTE: ${{ secrets.REMOTE }}
